@@ -1,12 +1,19 @@
 import * as React from 'react';
-import { CSSProperties, SVGProps, useMemo, useState } from 'react';
+import { CSSProperties, SVGProps, isValidElement, useMemo, useState } from 'react';
 import { scaleLinear } from 'victory-vendor/d3-scale';
 import { clsx } from 'clsx';
 import get from 'es-toolkit/compat/get';
 import { Surface } from '../container/Surface';
 import { Layer } from '../container/Layer';
 import { Sector } from '../shape/Sector';
-import { Text, Props as TextProps } from '../component/Text';
+import { type Props as TextProps } from '../component/Text';
+import {
+  type ImplicitLabelListType,
+  LabelListFromLabelProp,
+  type PolarLabelListEntry,
+  PolarLabelListContextProvider,
+  type Props as LabelListProps,
+} from '../component/LabelList';
 import { polarToCartesian } from '../util/PolarUtils';
 import { ReportChartMargin, ReportChartSize, useChartHeight, useChartWidth } from '../context/chartLayoutContext';
 import { TooltipPortalContext } from '../context/tooltipPortalContext';
@@ -29,11 +36,14 @@ import { RegisterGraphicalItemId } from '../context/RegisterGraphicalItemId';
 import { WithIdRequired } from '../util/useUniqueId';
 import { RequiresDefaultProps, resolveDefaultProps } from '../util/resolveDefaultProps';
 import { initialEventSettingsState } from '../state/eventSettingsSlice';
-import { GraphicalItemStyle, RechartsTheme } from '../theme/RechartsTheme';
+import { GraphicalItemStyle, type LabelTheme, RechartsTheme } from '../theme/RechartsTheme';
 import { useRechartsTheme } from '../theme/RechartsThemeContext';
 import { getOwnStyles, hasOwnColors } from '../theme/dataEntryStyles';
 import { getEffectivePageBackground } from '../theme/pageBackground';
+import { DataLabelThemeContextProvider, type DataLabelThemeResolver } from '../theme/labelTheme';
 import { SVGElementPropKeysType, svgPropertiesNoEventsFromUnknown } from '../util/svgPropertiesNoEvents';
+import { svgPropertiesAndEvents } from '../util/svgPropertiesAndEvents';
+import { AllZIndexPortals } from '../zIndex/ZIndexPortal';
 
 export interface SunburstData {
   [key: string]: any;
@@ -143,7 +153,28 @@ export interface SunburstChartProps extends EventThrottlingProps {
   fill?: string;
   stroke?: string;
   /**
-   * An object with svg text options to control the appearance of the chart labels.
+   * Renders one label for each sector through {@link LabelList}.
+   *
+   * - `true` shows the sector value in the middle of the sector.
+   * - `false` shows no labels. A `LabelList` child can still draw its own.
+   * - An object is the props of that `LabelList`.
+   * - A function or a React element is custom label content.
+   *
+   * The default labels use `pointerEvents="none"` so they do not block clicks on a sector.
+   * Under a theme, each label takes `graphicalItems[n].label` from the sector's first-ring branch.
+   * `textOptions` are merged into this label when it is `true` or an object.
+   *
+   * @defaultValue true
+   */
+  label?: ImplicitLabelListType;
+  /**
+   * SVG text props for the labels rendered by the `label` prop.
+   *
+   * Without a theme, the default labels are bold black text with a white outline.
+   * A theme does not apply those defaults. Use `label` or `graphicalItems[n].label`
+   * for themed label styles and backgrounds.
+   *
+   * These props are ignored when `label` is `false`, a function, or a React element.
    */
   textOptions?: TextProps;
 
@@ -169,6 +200,14 @@ interface DrawArcOptions {
   nestedActiveTooltipIndex?: TooltipIndex | undefined;
 }
 
+/**
+ * One label-list entry per sector for this render.
+ * The array is allocated here, not in the component that passes it to `PolarLabelListContextProvider`.
+ */
+function createSunburstLabelEntries(): Array<PolarLabelListEntry> {
+  return [];
+}
+
 const defaultTextProps = {
   fontWeight: 'bold',
   paintOrder: 'stroke fill',
@@ -176,7 +215,51 @@ const defaultTextProps = {
   stroke: '#FFF',
   fill: 'black',
   pointerEvents: 'none',
-};
+} as const satisfies TextProps;
+
+/**
+ * Props from `textOptions` that {@link LabelList} can apply to each sector label.
+ * LabelList positions the label from the sector, so text layout props such as `verticalAnchor` are not copied.
+ */
+function textOptionsToLabelListProps(textOptions: TextProps | undefined): LabelListProps {
+  if (textOptions == null) {
+    return { pointerEvents: 'none' };
+  }
+  /*
+   * `offset` is an SVG presentation attribute (`string | number`) and also a LabelList prop (`number`).
+   * Leave it off this object so the SVG attribute cannot take the place of the label offset.
+   */
+  const { background, pointerEvents, angle, offset: _offset, ...rest } = textOptions;
+  return {
+    ...svgPropertiesAndEvents(rest),
+    pointerEvents: pointerEvents ?? 'none',
+    ...(angle === undefined ? {} : { angle }),
+    ...(background === undefined ? {} : { background }),
+  };
+}
+
+/**
+ * Builds the `label` value rendered by {@link LabelListFromLabelProp}.
+ *
+ * `true` and label objects keep `textOptions` so unthemed charts look the same as before.
+ * Every built-in label ignores pointer events, unless the label object sets `pointerEvents` itself.
+ * Custom content is returned unchanged.
+ */
+function resolveSunburstLabel(label: ImplicitLabelListType, textOptions: TextProps | undefined): ImplicitLabelListType {
+  if (label === false || typeof label === 'function' || isValidElement(label)) {
+    return label;
+  }
+
+  const legacyLabelProps = textOptionsToLabelListProps(textOptions);
+  if (label === true) {
+    return legacyLabelProps;
+  }
+
+  return {
+    ...legacyLabelProps,
+    ...label,
+  };
+}
 
 function getMaxDepthOf(node: SunburstData): number {
   if (!node.children || node.children.length === 0) return 1;
@@ -267,26 +350,10 @@ type SunburstThemeStyles = {
   graphicalItems: RechartsTheme['graphicalItems'];
   /**
    * The color behind the chart.
-   * Separators and the label halo are painted in this color, so that they read as gaps.
+   * Separators are painted in this color, so that they read as gaps.
    */
   pageBackground: string | undefined;
 };
-
-/**
- * Label props from the theme. Explicit `textOptions` are applied on top of these.
- *
- * The label text takes the `typography` styles, which the Text component reads from the theme itself.
- * The label sits on top of the sector, so it gets a halo in the `pageBackground` color,
- * which keeps it readable on any sector color.
- * @param themeStyles styles from the theme
- */
-function getThemedTextProps(themeStyles: SunburstThemeStyles): TextProps {
-  const { pageBackground } = themeStyles;
-  return {
-    pointerEvents: 'none',
-    ...(pageBackground == null ? {} : { stroke: pageBackground, paintOrder: 'stroke fill' }),
-  };
-}
 
 export const defaultSunburstChartProps = {
   padding: 2,
@@ -297,6 +364,7 @@ export const defaultSunburstChartProps = {
   fill: '#333',
   stroke: '#FFF',
   textOptions: defaultTextProps,
+  label: true,
   startAngle: 0,
   endAngle: 360,
   responsive: false,
@@ -425,6 +493,7 @@ const SunburstChartImpl = ({
   fill,
   stroke,
   textOptions,
+  label,
   outerRadius: outerRadiusFromProps,
   cx: cxFromProps,
   cy: cyFromProps,
@@ -489,8 +558,14 @@ const SunburstChartImpl = ({
     );
   }
 
-  const labelProps: TextProps | undefined =
-    themeStyles == null ? textOptions : { ...getThemedTextProps(themeStyles), ...textOptions };
+  const resolvedLabel = resolveSunburstLabel(label, textOptions);
+  /*
+   * A chart fill or stroke opts the whole chart out of the theme, including its labels.
+   * A single sector opts out only its own label; descendants still inherit the branch label theme.
+   */
+  const chartHasColors = fill != null || stroke != null;
+  const labelListEntries = createSunburstLabelEntries();
+  const labelThemes: Array<LabelTheme | undefined> | undefined = themeStyles == null || chartHasColors ? undefined : [];
 
   // recursively add nodes for each data point and its children
   function drawArcs(
@@ -525,7 +600,6 @@ const SunburstChartImpl = ({
         branchStyle,
       });
       const fillColor = typeof sectorProps.fill === 'string' ? sectorProps.fill : undefined;
-      const { x: textX, y: textY } = polarToCartesian(0, 0, innerR + radius / 2, -(start + arcLength - arcLength / 2));
       currentAngle += arcLength;
       sectors.push(
         <g key={`sunburst-sector-${currentTooltipIndex}`}>
@@ -541,11 +615,31 @@ const SunburstChartImpl = ({
             cx={cx}
             cy={cy}
           />
-          <Text {...labelProps} alignmentBaseline="middle" textAnchor="middle" x={textX + cx} y={cy - textY}>
-            {d[dataKey]}
-          </Text>
         </g>,
       );
+      labelListEntries.push({
+        value: d[dataKey],
+        payload: d,
+        fill: fillColor,
+        clockWise: false,
+        parentViewBox: undefined,
+        viewBox: {
+          cx,
+          cy,
+          innerRadius: innerR,
+          outerRadius: innerR + radius,
+          startAngle: start,
+          endAngle: start + arcLength,
+          clockWise: false,
+        },
+      });
+      if (labelThemes != null) {
+        /*
+         * The first-ring index selects the theme entry, and every descendant reuses that branch style.
+         * A sector with its own fill or stroke does not take the label theme.
+         */
+        labelThemes.push(hasOwnColors(d) ? undefined : branchStyle?.label);
+      }
 
       const { x: tooltipX, y: tooltipY } = polarToCartesian(cx, cy, innerR + radius / 2, start);
       positions.set(currentTooltipIndex, { x: tooltipX, y: tooltipY });
@@ -577,20 +671,30 @@ const SunburstChartImpl = ({
     initialAngle: startAngle,
   });
 
+  const resolveLabelTheme: DataLabelThemeResolver | undefined =
+    labelThemes == null ? undefined : index => labelThemes[index];
+
   const layerClass = clsx('recharts-sunburst', className);
   return (
     <Surface width={width} height={height}>
-      <Layer className={layerClass}>{sectors}</Layer>
-      <SetSunburstTooltipEntrySettings
-        dataKey={dataKey}
-        nameKey={nameKey}
-        data={themeStyles == null ? data : { ...data, children: tooltipDataChildren }}
-        stroke={stroke}
-        fill={fill}
-        positions={positions}
-        id={id}
-      />
-      {children}
+      <AllZIndexPortals isPanorama={false}>
+        <PolarLabelListContextProvider value={labelListEntries}>
+          <DataLabelThemeContextProvider value={resolveLabelTheme}>
+            <Layer className={layerClass}>{sectors}</Layer>
+            <LabelListFromLabelProp label={resolvedLabel} />
+            {children}
+            <SetSunburstTooltipEntrySettings
+              dataKey={dataKey}
+              nameKey={nameKey}
+              data={themeStyles == null ? data : { ...data, children: tooltipDataChildren }}
+              stroke={stroke}
+              fill={fill}
+              positions={positions}
+              id={id}
+            />
+          </DataLabelThemeContextProvider>
+        </PolarLabelListContextProvider>
+      </AllZIndexPortals>
     </Surface>
   );
 };

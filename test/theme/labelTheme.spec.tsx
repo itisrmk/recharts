@@ -12,6 +12,7 @@ import {
   Pie,
   PieChart,
   RechartsThemeProvider,
+  SunburstChart,
   Surface,
   XAxis,
 } from '../../src';
@@ -313,6 +314,135 @@ describe('label theme', () => {
         </RechartsThemeProvider>,
       );
       expect(getBackgroundFills(container)).toEqual(['ivory', 'beige', 'ivory']);
+    });
+
+    describe('SunburstChart', () => {
+      const sunburstData = {
+        name: 'root',
+        value: 100,
+        children: [
+          {
+            name: 'A',
+            value: 40,
+            children: [
+              { name: 'A1', value: 20 },
+              { name: 'A2', value: 20 },
+            ],
+          },
+          { name: 'B', value: 30 },
+          { name: 'C', value: 30 },
+        ],
+      };
+
+      function renderSunburst(
+        props: Partial<React.ComponentProps<typeof SunburstChart>> = {},
+        children: React.ReactNode = null,
+      ) {
+        return rechartsTestRender(
+          <RechartsThemeProvider value={theme}>
+            <SunburstChart width={300} height={300} data={sunburstData} {...props}>
+              {children}
+            </SunburstChart>
+          </RechartsThemeProvider>,
+        );
+      }
+
+      it('gives every sector the label theme of its first-ring branch, including the branch past the end of the palette', () => {
+        const { container } = renderSunburst();
+        const texts = getTexts(container, '.recharts-label-list .recharts-label');
+        // Depth-first: A, A1, A2 share the first entry. B takes the second. C wraps back to the first.
+        expect(texts.map(text => text.style.fill)).toEqual(['purple', 'purple', 'purple', 'black', 'purple']);
+        expect(texts.map(text => text.style.fontWeight)).toEqual(['bold', 'bold', 'bold', '', 'bold']);
+        texts.forEach(text => expect(text.style.fontStyle).toBe(''));
+        expect(getBackgroundFills(container)).toEqual(['ivory', 'ivory', 'ivory', 'beige', 'ivory']);
+        const firstBackground = container.querySelector('rect.recharts-text-background');
+        expect(firstBackground).toHaveAttribute('rx', '2');
+      });
+
+      it('skips the label theme for a sector that sets its own color, and keeps it for descendants', () => {
+        const { container } = renderSunburst({
+          data: {
+            name: 'root',
+            value: 100,
+            children: [
+              {
+                name: 'A',
+                value: 60,
+                fill: 'blue',
+                children: [{ name: 'A1', value: 60 }],
+              },
+              { name: 'B', value: 40 },
+            ],
+          },
+        });
+        const texts = getTexts(container, '.recharts-label');
+        expect(texts.map(text => text.style.fill)).toEqual(['blue', 'blue', 'black']);
+        expect(texts.map(text => text.style.fontWeight)).toEqual(['', 'bold', '']);
+        expect(getBackgroundFills(container)).toEqual(['ivory', 'beige']);
+      });
+
+      it('skips the label theme for a nested sector that sets its own color', () => {
+        const { container } = renderSunburst({
+          data: {
+            name: 'root',
+            value: 100,
+            children: [
+              {
+                name: 'A',
+                value: 60,
+                children: [{ name: 'A1', value: 60, stroke: 'navy' }],
+              },
+              { name: 'B', value: 40 },
+            ],
+          },
+        });
+        const texts = getTexts(container, '.recharts-label');
+        expect(texts.map(text => text.style.fill)).toEqual(['purple', 'purple', 'black']);
+        expect(texts.map(text => text.style.fontWeight)).toEqual(['bold', '', '']);
+        expect(getBackgroundFills(container)).toEqual(['ivory', 'beige']);
+      });
+
+      it('ignores the label theme when the chart sets its own fill', () => {
+        const { container } = renderSunburst({ fill: '#123456' });
+        const texts = getTexts(container, '.recharts-label');
+        expect(texts).toHaveLength(5);
+        texts.forEach(text => {
+          expect(text.style.fill).toBe('rgb(18, 52, 86)');
+          expect(text.style.fontWeight).toBe('');
+          expect(text.style.fontStyle).toBe('');
+        });
+        expect(getBackgroundFills(container)).toEqual([]);
+      });
+
+      it('lets an explicit label prop win over the branch theme', () => {
+        const { container } = renderSunburst({ label: { fill: 'red', background: false } });
+        const texts = getTexts(container, '.recharts-label');
+        expect(texts).toHaveLength(5);
+        texts.forEach(text => expect(text.style.fill).toBe('red'));
+        expect(getBackgroundFills(container)).toEqual([]);
+      });
+
+      it('does not render labels when label is false', () => {
+        const { container } = renderSunburst({ label: false });
+        expect(getTexts(container, '.recharts-label')).toHaveLength(0);
+        expect(getBackgroundFills(container)).toEqual([]);
+      });
+
+      it('styles a LabelList child from the branch theme', () => {
+        const { container } = renderSunburst({ label: false }, <LabelList dataKey="name" />);
+        const texts = getTexts(container, '.recharts-label');
+        expect(texts.map(text => text.textContent)).toEqual(['A', 'A1', 'A2', 'B', 'C']);
+        expect(texts.map(text => text.style.fontWeight)).toEqual(['bold', 'bold', 'bold', '', 'bold']);
+        expect(getBackgroundFills(container)).toEqual(['ivory', 'ivory', 'ivory', 'beige', 'ivory']);
+      });
+
+      it('lets LabelList props turn the themed background off', () => {
+        const { container } = renderSunburst({ label: false }, <LabelList fill="red" background={false} />);
+        const texts = getTexts(container, '.recharts-label');
+        expect(texts).toHaveLength(5);
+        texts.forEach(text => expect(text.style.fill).toBe('red'));
+        expect(getBackgroundFills(container)).toEqual([]);
+      });
     });
 
     it('are unchanged without a theme', () => {

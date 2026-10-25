@@ -45,11 +45,14 @@ export type GraphicalItemStyle = Styles2D & {
    * Data labels never use the global {@link RechartsTheme.label}.
    *
    * The labels take the same entry as their graphical item: Pie and Funnel take one entry per sector or trapezoid,
-   * the other graphical items take one entry per series.
+   * SunburstChart takes the entry of the first-ring branch for every sector in that branch,
+   * and the other graphical items take one entry per series.
    * If the graphical item sets its own `fill` or `stroke`, it ignores its theme entry completely,
-   * and so do its labels. A data entry with its own `fill` or `stroke` only changes its shape, not its label.
+   * and so do its labels. A data entry with its own `fill` or `stroke` only changes its shape, not its label,
+   * except in SunburstChart, where that sector also skips the branch label theme.
    *
-   * If `style` sets no color, data labels keep their default color. In Pie and Funnel, that is the color of the shape.
+   * If `style` sets no color, data labels keep their default color. In Pie, Funnel, and SunburstChart,
+   * that is the color of the shape.
    *
    * Explicit props of `LabelList`, of the `label` prop of graphical items, and of the default Pie label
    * win over these styles.

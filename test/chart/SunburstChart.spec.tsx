@@ -1,7 +1,8 @@
 import React from 'react';
 import { fireEvent } from '@testing-library/react';
-import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
-import { Customized, SunburstChart, SunburstData, Tooltip } from '../../src';
+import { afterEach, beforeEach, describe, expect, it, Mock, vi } from 'vitest';
+import { Customized, LabelList, SunburstChart, SunburstData, Tooltip } from '../../src';
+import { polarToCartesian } from '../../src/util/PolarUtils';
 import { exampleSunburstData } from '../_data';
 import { getPieSectorAngles } from '../helper/expectPieSectors';
 import { useChartHeight, useChartWidth, useViewBox } from '../../src/context/chartLayoutContext';
@@ -15,6 +16,7 @@ import { userEventSetup } from '../helper/userEventSetup';
 import { expectLastCalledWith } from '../helper/expectLastCalledWith';
 import { TooltipInteractionState } from '../../src/state/tooltipSlice';
 import { mockGetBoundingClientRect } from '../helper/mockGetBoundingClientRect';
+import { mockGetBBox, restoreMockGetBBox } from '../helper/mockGetBBox';
 import {
   expectTooltipCoordinate,
   expectTooltipNotVisible,
@@ -436,6 +438,190 @@ describe('<Sunburst />', () => {
        */
       expect(hoverCoordinates[3]).not.toEqual(hoverCoordinates[1]);
       expect(new Set(hoverCoordinates.map(coordinate => `${coordinate?.x},${coordinate?.y}`)).size).toBe(4);
+    });
+  });
+
+  describe('labels', () => {
+    const halvesData: SunburstData = {
+      name: 'Root',
+      value: 100,
+      children: [
+        { name: 'A', value: 50 },
+        { name: 'B', value: 50 },
+      ],
+    };
+
+    function labelText(label: Element): string {
+      return label.textContent ?? '';
+    }
+
+    it('renders each sector value through LabelList, in the middle of the sector, without receiving pointer events', () => {
+      const { container } = rechartsTestRender(<SunburstChart width={400} height={400} data={halvesData} />);
+
+      const sectors = Array.from(container.querySelectorAll('.recharts-sector'));
+      const labels = Array.from(container.querySelectorAll<SVGTextElement>('.recharts-label'));
+      expect(labels).toHaveLength(sectors.length);
+      expect(labels.map(labelText)).toEqual(['50', '50']);
+      expect(container.querySelector('.recharts-zIndex-layer_2000 .recharts-label-list')).not.toBeNull();
+
+      labels.forEach(label => {
+        expect(label).toHaveAttribute('pointer-events', 'none');
+        expect(label).toHaveAttribute('font-weight', 'bold');
+        expect(label).toHaveAttribute('stroke', '#FFF');
+        expect(label).toHaveAttribute('paint-order', 'stroke fill');
+        expect(label).toHaveAttribute('font-size', '.75rem');
+        expect(label.style.fill).toBe('black');
+      });
+
+      /*
+       * Two equal halves of a 400px chart. The ring is (200 - 50) / 2 = 75 thick,
+       * so the label sits at radius 50 + 75 / 2 = 87.5, on the mid angle of each sector.
+       */
+      const expected = [polarToCartesian(200, 200, 87.5, 90), polarToCartesian(200, 200, 87.5, 270)];
+      labels.forEach((label, index) => {
+        const point = expected[index];
+        expect(point).toBeDefined();
+        expect(Number(label.getAttribute('x'))).toBeCloseTo(point?.x ?? Number.NaN, 5);
+        expect(Number(label.getAttribute('y'))).toBeCloseTo(point?.y ?? Number.NaN, 5);
+        expect(label).toHaveAttribute('text-anchor', 'middle');
+      });
+
+      sectors.forEach(sector => {
+        expect(sector.querySelector('.recharts-label')).toBeNull();
+      });
+    });
+
+    it('still delivers sector mouse and click events while labels are drawn on top', async () => {
+      const user = userEventSetup();
+      const onClick = vi.fn();
+      const { container } = rechartsTestRender(
+        <SunburstChart width={400} height={400} data={halvesData} onClick={onClick} />,
+      );
+      const sector = container.querySelector('.recharts-sector');
+      assertNotNull(sector);
+
+      await user.click(sector);
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders no labels when label is false', () => {
+      const { container } = rechartsTestRender(
+        <SunburstChart width={400} height={400} data={halvesData} label={false} />,
+      );
+
+      expect(container.querySelectorAll('.recharts-sector')).toHaveLength(2);
+      expect(container.querySelector('.recharts-label')).toBeNull();
+      expect(container.querySelector('.recharts-label-list')).toBeNull();
+    });
+
+    it('merges a label object over the legacy text options', () => {
+      const { container } = rechartsTestRender(
+        <SunburstChart width={400} height={400} data={halvesData} label={{ position: 'center', fill: 'crimson' }} />,
+      );
+
+      const labels = Array.from(container.querySelectorAll<SVGTextElement>('.recharts-label'));
+      expect(labels.map(labelText)).toEqual(['50', '50']);
+      labels.forEach(label => {
+        expect(Number(label.getAttribute('x'))).toBeCloseTo(200, 5);
+        expect(Number(label.getAttribute('y'))).toBeCloseTo(200, 5);
+        expect(label.style.fill).toBe('crimson');
+        expect(label).toHaveAttribute('font-weight', 'bold');
+        expect(label).toHaveAttribute('pointer-events', 'none');
+      });
+    });
+
+    it('keeps an explicit label pointerEvents value', () => {
+      const { container } = rechartsTestRender(
+        <SunburstChart width={400} height={400} data={halvesData} label={{ pointerEvents: 'auto' }} />,
+      );
+
+      const label = container.querySelector('.recharts-label');
+      assertNotNull(label);
+      expect(label).toHaveAttribute('pointer-events', 'auto');
+    });
+
+    it('applies explicit textOptions and still ignores pointer events', () => {
+      const { container } = rechartsTestRender(
+        <SunburstChart width={400} height={400} data={halvesData} textOptions={{ fill: 'navy', fontSize: 12 }} />,
+      );
+
+      const label = container.querySelector<SVGTextElement>('.recharts-label');
+      assertNotNull(label);
+      expect(label.style.fill).toBe('navy');
+      expect(label).toHaveAttribute('font-size', '12');
+      expect(label).not.toHaveAttribute('font-weight');
+      expect(label).toHaveAttribute('pointer-events', 'none');
+    });
+
+    it('renders a LabelList child with the sector payload when the default label is off', () => {
+      const { container } = rechartsTestRender(
+        <SunburstChart width={400} height={400} data={exampleSunburstData} label={false}>
+          <LabelList dataKey="name" />
+        </SunburstChart>,
+      );
+
+      const labels = Array.from(container.querySelectorAll('.recharts-label'));
+      expect(labels.map(labelText)).toEqual(['Child1', 'third child', 'Child2', 'another child', 'Child3']);
+    });
+
+    it('renders the default labels and a LabelList child together', () => {
+      const { container } = rechartsTestRender(
+        <SunburstChart width={400} height={400} data={halvesData}>
+          <LabelList dataKey="name" className="name-label" />
+        </SunburstChart>,
+      );
+
+      expect(container.querySelectorAll('.recharts-label-list')).toHaveLength(2);
+      /*
+       * A className passed to LabelList replaces the built-in `recharts-label` class,
+       * so the two lists are queried separately.
+       */
+      expect(Array.from(container.querySelectorAll('.recharts-label')).map(labelText)).toEqual(['50', '50']);
+      expect(Array.from(container.querySelectorAll('.name-label')).map(labelText)).toEqual(['A', 'B']);
+    });
+
+    it('uses a function label as the content of each sector label', () => {
+      const { container } = rechartsTestRender(
+        <SunburstChart
+          width={400}
+          height={400}
+          data={halvesData}
+          label={entry => <text className="custom-sunburst-label">{entry.value}</text>}
+        />,
+      );
+
+      const labels = Array.from(container.querySelectorAll('.custom-sunburst-label'));
+      expect(labels.map(labelText)).toEqual(['50', '50']);
+      expect(container.querySelector('.recharts-label')).toBeNull();
+    });
+
+    describe('background', () => {
+      beforeEach(() => {
+        mockGetBBox(() => ({ x: 10, y: 20, width: 30, height: 12 }));
+      });
+
+      afterEach(() => {
+        restoreMockGetBBox();
+      });
+
+      it('draws the background from the label prop', () => {
+        const { container } = rechartsTestRender(
+          <SunburstChart
+            width={400}
+            height={400}
+            data={halvesData}
+            label={{ background: { fill: 'yellow', rx: 3 } }}
+          />,
+        );
+
+        const rects = container.querySelectorAll('rect.recharts-text-background');
+        expect(rects).toHaveLength(2);
+        rects.forEach(rect => {
+          expect(rect).toHaveAttribute('fill', 'yellow');
+          expect(rect).toHaveAttribute('rx', '3');
+        });
+        expect(container.querySelector('.recharts-label')).toHaveAttribute('font-weight', 'bold');
+      });
     });
   });
 });

@@ -45,7 +45,7 @@ function getSectors(container: Element) {
 }
 
 function getFirstLabel(container: Element): SVGTextElement {
-  const label = container.querySelector<SVGTextElement>('.recharts-sunburst text');
+  const label = container.querySelector<SVGTextElement>('.recharts-label');
   assertNotNull(label);
   return label;
 }
@@ -107,30 +107,33 @@ describe('<SunburstChart /> theme', () => {
     expect(getSectors(container).map(sector => sector.stroke)).toEqual(['darkred', 'darkred', 'darkred', 'darkgreen']);
   });
 
-  it('paints separators and the label halo in chart.backgroundColor if the theme has no page background', () => {
+  it('paints separators in chart.backgroundColor if the theme has no page background', () => {
     const { container } = renderSunburst({
       ...theme,
       pageBackground: undefined,
       chart: { backgroundColor: '#f8fafc' },
     });
     expect(getSectors(container).map(sector => sector.stroke)).toEqual(['#f8fafc', '#f8fafc', '#f8fafc', '#f8fafc']);
-    expect(getFirstLabel(container)).toHaveAttribute('stroke', '#f8fafc');
+    expect(getFirstLabel(container)).not.toHaveAttribute('stroke');
   });
 
-  it('prefers the page background over chart.backgroundColor', () => {
+  it('prefers the page background over chart.backgroundColor for separators', () => {
     const { container } = renderSunburst({ ...theme, chart: { backgroundColor: '#f8fafc' } });
     expect(getSectors(container).map(sector => sector.stroke)).toEqual(['ivory', 'ivory', 'ivory', 'ivory']);
-    expect(getFirstLabel(container)).toHaveAttribute('stroke', 'ivory');
+    expect(getFirstLabel(container)).not.toHaveAttribute('stroke');
   });
 
-  it('styles labels with typography and a halo in the page background color, without the legacy label styles', () => {
+  it('colors labels with the sector color and does not paint a pageBackground halo', () => {
     const { container } = renderSunburst(theme);
-    const label = getFirstLabel(container);
-    expect(label.style.fill).toBe('navy');
-    expect(label).toHaveAttribute('stroke', 'ivory');
-    expect(label).toHaveAttribute('paint-order', 'stroke fill');
-    expect(label).not.toHaveAttribute('font-weight');
-    expect(label).not.toHaveAttribute('font-size');
+    const labels = Array.from(container.querySelectorAll<SVGTextElement>('.recharts-label'));
+    expect(labels.map(label => label.style.fill)).toEqual(['red', 'red', 'red', 'green']);
+    labels.forEach(label => {
+      expect(label).not.toHaveAttribute('stroke');
+      expect(label).not.toHaveAttribute('paint-order');
+      expect(label).not.toHaveAttribute('font-weight');
+      expect(label).not.toHaveAttribute('font-size');
+      expect(label).toHaveAttribute('pointer-events', 'none');
+    });
   });
 
   it('lets explicit fill and stroke props override the theme', () => {

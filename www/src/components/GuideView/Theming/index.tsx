@@ -585,8 +585,7 @@ export function ThemingGuide() {
             <td>a CSS color</td>
             <td>
               Never painted. The color that <LinkToApi>Treemap</LinkToApi> outlines its tiles with, and that{' '}
-              <LinkToApi>SunburstChart</LinkToApi> draws its separators and label halos with. See the Background section
-              below.
+              <LinkToApi>SunburstChart</LinkToApi> draws its separators with. See the Background section below.
             </td>
           </tr>
         </tbody>
@@ -607,11 +606,10 @@ export function ThemingGuide() {
       <p>A theme has two background settings, and they do different things:</p>
       <ul>
         <li>
-          <code>pageBackground</code> is the color behind the chart. Recharts never paints it. It draws gaps and halos
-          in this color, so that they look like holes cut into the chart: the outlines between{' '}
-          <LinkToApi>Treemap</LinkToApi> tiles, and the separators and label halos of{' '}
-          <LinkToApi>SunburstChart</LinkToApi>. Set it to the background of your page. The built-in themes set it to the
-          background they are designed for.
+          <code>pageBackground</code> is the color behind the chart. Recharts never paints it. It draws gaps in this
+          color, so that they look like holes cut into the chart: the outlines between <LinkToApi>Treemap</LinkToApi>{' '}
+          tiles, and the separators of <LinkToApi>SunburstChart</LinkToApi>. Set it to the background of your page. The
+          built-in themes set it to the background they are designed for.
         </li>
         <li>
           <code>chart</code> is painted on the element that wraps the chart. The <LinkToApi>Legend</LinkToApi> renders
@@ -634,7 +632,9 @@ export function ThemingGuide() {
         <code>label</code> prop of graphical items, and the default <LinkToApi>Pie</LinkToApi> label draw, take their
         styles from the <code>label</code> of their <code>graphicalItems</code> entry. Each series can have its own
         label styles, and <LinkToApi>Pie</LinkToApi> and <LinkToApi>Funnel</LinkToApi> take one entry per sector or
-        trapezoid, the same entry that colors the shape. All other labels take the top-level <code>label</code>.
+        trapezoid, the same entry that colors the shape. <LinkToApi>SunburstChart</LinkToApi> takes the entry of the
+        first-ring sector for every sector in that branch. A sector that sets its own <code>fill</code> or{' '}
+        <code>stroke</code> skips that label theme. All other labels take the top-level <code>label</code>.
       </p>
       <p>
         Both take <code>style</code>, which is merged over <code>typography</code>, and <code>background</code>, which
