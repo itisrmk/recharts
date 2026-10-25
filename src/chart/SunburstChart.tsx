@@ -153,16 +153,13 @@ export interface SunburstChartProps extends EventThrottlingProps {
   fill?: string;
   stroke?: string;
   /**
-   * Renders one label for each sector through {@link LabelList}.
-   *
-   * - `true` shows the sector value in the middle of the sector.
-   * - `false` shows no labels. A `LabelList` child can still draw its own.
-   * - An object is the props of that `LabelList`.
-   * - A function or a React element is custom label content.
-   *
-   * The default labels use `pointerEvents="none"` so they do not block clicks on a sector.
-   * Under a theme, each label takes `graphicalItems[n].label` from the sector's first-ring branch.
-   * `textOptions` are merged into this label when it is `true` or an object.
+   * Renders one label for each sector. Options:
+   * - `true`: renders default labels;
+   * - `false`: no labels are rendered;
+   * - `object`: the props of LabelList component;
+   * - `ReactElement`: a custom SVG label element, such as `<text>` or `<g>`.
+   *   HTML elements such as `<div>` are not valid inside the chart SVG and may trigger React DOM warnings.
+   * - `function`: a render function of custom label.
    *
    * @defaultValue true
    */
