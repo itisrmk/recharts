@@ -633,8 +633,9 @@ export function ThemingGuide() {
         A theme styles labels in two places. Data labels, the ones that <LinkToApi>LabelList</LinkToApi>, the{' '}
         <code>label</code> prop of graphical items, and the default <LinkToApi>Pie</LinkToApi> label draw, take their
         styles from the <code>label</code> of their <code>graphicalItems</code> entry. Each series can have its own
-        label styles, and <LinkToApi>Pie</LinkToApi> and <LinkToApi>Funnel</LinkToApi> take one entry per sector or
-        trapezoid, the same entry that colors the shape. All other labels take the top-level <code>label</code>.
+        label styles. <LinkToApi>Pie</LinkToApi> and <LinkToApi>Funnel</LinkToApi> take one entry per sector or
+        trapezoid, and <LinkToApi>Treemap</LinkToApi> takes one entry per top-level branch, the same entry that colors
+        the shape. All other labels take the top-level <code>label</code>.
       </p>
       <p>
         Both take <code>style</code>, which is merged over <code>typography</code>, and <code>background</code>, which

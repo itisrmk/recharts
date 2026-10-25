@@ -13,6 +13,7 @@ import {
   PieChart,
   RechartsThemeProvider,
   Surface,
+  Treemap,
   XAxis,
 } from '../../src';
 import { RechartsTheme } from '../../src/theme/RechartsTheme';
@@ -324,6 +325,138 @@ describe('label theme', () => {
       const texts = getTexts(container, '.recharts-label-list .recharts-label');
       texts.forEach(text => expect(text.style.fill).toBe('rgb(128, 128, 128)'));
       expect(getBackgroundFills(container)).toEqual([]);
+    });
+
+    it('takes one theme entry per top-level Treemap branch, including nested tiles', () => {
+      const nested = [
+        {
+          name: 'Hardware',
+          children: [
+            { name: 'Laptop', value: 100 },
+            { name: 'Monitor', value: 100 },
+          ],
+        },
+        {
+          name: 'Software',
+          children: [{ name: 'Editor', value: 80 }],
+        },
+      ];
+      const { container } = rechartsTestRender(
+        <RechartsThemeProvider value={theme}>
+          <Treemap width={500} height={400} data={nested} isAnimationActive={false} nameKey="name" dataKey="value" />
+        </RechartsThemeProvider>,
+      );
+
+      const labelByName = (name: string): SVGTextElement => {
+        const match = getTexts(container, '.recharts-label-list text').find(text => text.textContent === name);
+        expect(match).toBeDefined();
+        if (match == null) {
+          throw new Error(`missing label ${name}`);
+        }
+        return match;
+      };
+
+      expect(labelByName('Hardware').style.fontWeight).toBe('bold');
+      expect(labelByName('Laptop').style.fontWeight).toBe('bold');
+      expect(labelByName('Monitor').style.fontWeight).toBe('bold');
+      expect(labelByName('Monitor').style.fill).toBe('');
+      expect(labelByName('Software').style.fill).toBe('black');
+      expect(labelByName('Software').style.fontWeight).toBe('');
+      expect(labelByName('Editor').style.fill).toBe('black');
+      // The global label theme does not style Treemap data labels
+      expect(labelByName('Hardware').style.fontStyle).toBe('');
+
+      const backgroundByName = (name: string): string | null => {
+        const text = labelByName(name);
+        const background = text.closest('g')?.querySelector('rect.recharts-text-background');
+        return background?.getAttribute('fill') ?? null;
+      };
+      expect(backgroundByName('Hardware')).toBe('ivory');
+      expect(backgroundByName('Laptop')).toBe('ivory');
+      expect(backgroundByName('Monitor')).toBe('ivory');
+      expect(backgroundByName('Software')).toBe('beige');
+      expect(backgroundByName('Editor')).toBe('beige');
+    });
+
+    it('lets an explicit Treemap label win over the theme, including background={false}', () => {
+      const { container } = rechartsTestRender(
+        <RechartsThemeProvider value={theme}>
+          <Treemap
+            width={300}
+            height={200}
+            data={data}
+            isAnimationActive={false}
+            nameKey="name"
+            dataKey="value"
+            label={{ position: 'center', fill: 'red', background: false }}
+          />
+        </RechartsThemeProvider>,
+      );
+      const texts = getTexts(container, '.recharts-label-list .recharts-label');
+      expect(texts.map(text => text.textContent).filter(text => text !== '')).toEqual(['A', 'B', 'C']);
+      texts.forEach(text => expect(text.style.fill).toBe('red'));
+      expect(getBackgroundFills(container)).toEqual([]);
+    });
+
+    it('ignores the Treemap label theme when a tile defines its own fill', () => {
+      const { container } = rechartsTestRender(
+        <RechartsThemeProvider value={theme}>
+          <Treemap
+            width={400}
+            height={250}
+            isAnimationActive={false}
+            nameKey="name"
+            dataKey="value"
+            data={[
+              { name: 'Painted', value: 100, fill: 'orange' },
+              { name: 'Themed', value: 80 },
+            ]}
+          />
+        </RechartsThemeProvider>,
+      );
+      const painted = getTexts(container, '.recharts-label-list text').find(text => text.textContent === 'Painted');
+      const themed = getTexts(container, '.recharts-label-list text').find(text => text.textContent === 'Themed');
+      expect(painted).toBeDefined();
+      expect(themed).toBeDefined();
+      expect(painted?.style.fontWeight).toBe('');
+      expect(themed?.style.fill).toBe('black');
+      expect(getBackgroundFills(container)).toEqual(['beige']);
+    });
+
+    it('ignores the Treemap label theme when Treemap sets its own fill', () => {
+      const { container } = rechartsTestRender(
+        <RechartsThemeProvider value={theme}>
+          <Treemap
+            width={300}
+            height={200}
+            data={data}
+            fill="gold"
+            isAnimationActive={false}
+            nameKey="name"
+            dataKey="value"
+          />
+        </RechartsThemeProvider>,
+      );
+      getTexts(container, '.recharts-label-list text').forEach(text => {
+        expect(text.style.fontWeight).toBe('');
+        expect(text.style.fill).toBe('');
+      });
+      expect(getBackgroundFills(container)).toEqual([]);
+    });
+
+    it('draws a LabelList child with the branch theme when default labels are off', () => {
+      const { container } = rechartsTestRender(
+        <RechartsThemeProvider value={theme}>
+          <Treemap width={300} height={200} data={data} isAnimationActive={false} label={false}>
+            <LabelList position="center" />
+          </Treemap>
+        </RechartsThemeProvider>,
+      );
+      const texts = getTexts(container, '.recharts-label-list .recharts-label').filter(text => text.textContent !== '');
+      expect(texts).toHaveLength(3);
+      expect(texts[0]?.style.fontWeight).toBe('bold');
+      expect(texts[1]?.style.fill).toBe('black');
+      expect(getBackgroundFills(container)).toEqual(['ivory', 'beige', 'ivory']);
     });
   });
 });

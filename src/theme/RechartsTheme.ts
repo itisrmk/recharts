@@ -45,9 +45,10 @@ export type GraphicalItemStyle = Styles2D & {
    * Data labels never use the global {@link RechartsTheme.label}.
    *
    * The labels take the same entry as their graphical item: Pie and Funnel take one entry per sector or trapezoid,
-   * the other graphical items take one entry per series.
+   * Treemap takes one entry per top-level branch, and the other graphical items take one entry per series.
    * If the graphical item sets its own `fill` or `stroke`, it ignores its theme entry completely,
-   * and so do its labels. A data entry with its own `fill` or `stroke` only changes its shape, not its label.
+   * and so do its labels. A Treemap tile that defines its own `fill` or `stroke` ignores the label theme too.
+   * On other charts, a data entry with its own `fill` or `stroke` only changes its shape, not its label.
    *
    * If `style` sets no color, data labels keep their default color. In Pie and Funnel, that is the color of the shape.
    *

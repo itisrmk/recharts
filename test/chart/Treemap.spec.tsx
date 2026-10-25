@@ -1,13 +1,15 @@
 import React from 'react';
 import { describe, test, expect, it, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { Tooltip, Treemap, XAxis, YAxis } from '../../src';
+import { LabelList, Tooltip, Treemap, XAxis, YAxis } from '../../src';
 import { exampleTreemapData } from '../_data';
 import { TreemapNode, addToTreemapNodeIndex, computeNode, treemapPayloadSearcher } from '../../src/chart/Treemap';
 import { useChartHeight, useChartWidth, useMargin, useViewBox } from '../../src/context/chartLayoutContext';
 import { getTooltip, showTooltip } from '../component/Tooltip/tooltipTestHelpers';
 import { treemapNodeChartMouseHoverTooltipSelector } from '../component/Tooltip/tooltipMouseHoverSelectors';
 import { assertNotNull } from '../helper/assertNotNull';
+import { rechartsTestRender } from '../helper/createSelectorTestCase';
+import { mockGetBBox, restoreMockGetBBox } from '../helper/mockGetBBox';
 import { mockTouchingElement } from '../helper/mockTouchingElement';
 
 const multiLevelInsetData = [
@@ -1099,5 +1101,145 @@ describe('<Treemap /> mouse events', () => {
 
     fireEvent.touchMove(firstNode, { touches: [{ clientX: 200, clientY: 200 }] });
     expect(onTouchMove).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe('<Treemap /> labels', () => {
+  const tiles = [
+    { name: 'Alpha', value: 100 },
+    { name: 'Beta', value: 50 },
+  ];
+
+  test('renders default tile labels inside tiles that are large enough for the name', () => {
+    const { container } = render(
+      <Treemap width={300} height={200} data={tiles} isAnimationActive={false} nameKey="name" dataKey="value" />,
+    );
+
+    const labels = Array.from(container.querySelectorAll<SVGTextElement>('.recharts-label-list text'));
+    const alpha = labels.find(text => text.textContent === 'Alpha');
+    const beta = labels.find(text => text.textContent === 'Beta');
+    assertNotNull(alpha);
+    assertNotNull(beta);
+
+    const depthOneRects = container.querySelectorAll<SVGGraphicsElement>(
+      '.recharts-treemap-depth-1 .recharts-rectangle',
+    );
+    const firstRect = depthOneRects[0];
+    const secondRect = depthOneRects[1];
+    assertNotNull(firstRect);
+    assertNotNull(secondRect);
+    [
+      { label: alpha, rect: firstRect },
+      { label: beta, rect: secondRect },
+    ].forEach(({ label, rect }) => {
+      const x = Number(rect.getAttribute('x'));
+      const y = Number(rect.getAttribute('y'));
+      const height = Number(rect.getAttribute('height'));
+      expect(label.getAttribute('x')).toBe(String(x + 8));
+      expect(label.getAttribute('y')).toBe(String(y + height / 2 + 7));
+      expect(label.getAttribute('font-size')).toBe('14');
+    });
+  });
+
+  test('hides default labels when every tile is too small', () => {
+    const { container } = render(
+      <Treemap width={16} height={16} data={tiles} isAnimationActive={false} nameKey="name" dataKey="value" />,
+    );
+
+    expect(container.querySelectorAll('.recharts-rectangle').length).toBeGreaterThan(0);
+    expect(container.querySelector('.recharts-label-list text')).not.toBeInTheDocument();
+  });
+
+  test('label={false} renders no tile labels', () => {
+    const { container } = render(
+      <Treemap
+        width={300}
+        height={200}
+        data={tiles}
+        isAnimationActive={false}
+        nameKey="name"
+        dataKey="value"
+        label={false}
+      />,
+    );
+
+    expect(container.querySelector('.recharts-label-list')).not.toBeInTheDocument();
+    expect(container.querySelector('text')).not.toBeInTheDocument();
+  });
+
+  test('label object renders LabelList labels and can draw a background', () => {
+    mockGetBBox(() => ({ x: 10, y: 20, width: 30, height: 12 }));
+    try {
+      const { container } = rechartsTestRender(
+        <Treemap
+          width={300}
+          height={200}
+          data={tiles}
+          isAnimationActive={false}
+          nameKey="name"
+          dataKey="value"
+          label={{ position: 'center', fill: 'crimson', background: { fill: 'ivory' } }}
+        />,
+      );
+
+      const labels = Array.from(container.querySelectorAll<SVGTextElement>('.recharts-label-list .recharts-label'));
+      expect(labels.map(label => label.textContent).filter(text => text !== '')).toEqual(['Alpha', 'Beta']);
+      labels.forEach(label => expect(label.style.fill).toBe('crimson'));
+      const backgrounds = Array.from(container.querySelectorAll('rect.recharts-text-background')).map(rect =>
+        rect.getAttribute('fill'),
+      );
+      expect(backgrounds.length).toBe(labels.length);
+      expect(backgrounds.every(fill => fill === 'ivory')).toBe(true);
+    } finally {
+      restoreMockGetBBox();
+    }
+  });
+
+  test('renders a LabelList child', () => {
+    const { container } = rechartsTestRender(
+      <Treemap width={300} height={200} data={tiles} isAnimationActive={false} label={false}>
+        <LabelList position="center" fill="navy" />
+      </Treemap>,
+    );
+
+    const labels = Array.from(container.querySelectorAll<SVGTextElement>('.recharts-label-list .recharts-label'));
+    expect(labels.map(label => label.textContent).filter(text => text !== '')).toEqual(['Alpha', 'Beta']);
+    labels.forEach(label => expect(label.style.fill).toBe('navy'));
+  });
+
+  test('custom content keeps control unless label or LabelList is set explicitly', () => {
+    const content = () => <rect className="custom-tile" width="10" height="10" />;
+    const { container, rerender } = render(
+      <Treemap
+        width={300}
+        height={200}
+        data={tiles}
+        isAnimationActive={false}
+        nameKey="name"
+        dataKey="value"
+        content={content}
+      />,
+    );
+
+    expect(container.querySelectorAll('.custom-tile').length).toBeGreaterThan(0);
+    expect(container.querySelector('.recharts-label-list text')).not.toBeInTheDocument();
+
+    rerender(
+      <Treemap
+        width={300}
+        height={200}
+        data={tiles}
+        isAnimationActive={false}
+        nameKey="name"
+        dataKey="value"
+        content={content}
+        label
+      />,
+    );
+
+    expect(container.querySelectorAll('.custom-tile').length).toBeGreaterThan(0);
+    expect(Array.from(container.querySelectorAll('.recharts-label-list text')).map(text => text.textContent)).toEqual(
+      expect.arrayContaining(['Alpha', 'Beta']),
+    );
   });
 });

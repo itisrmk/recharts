@@ -39,14 +39,26 @@ function queryTiles(container: Element, depth: number): ReadonlyArray<SVGPathEle
 
 /**
  * Reads fill and stroke of the tiles, in render order, together with the name of the node.
- * The name is read from the label rendered next to the tile.
+ * Tile labels are rendered by LabelList in the same order as the tiles.
  */
 function getTileAttributes(container: Element, depth: number) {
-  return queryTiles(container, depth).map(rect => ({
-    name: rect.parentElement?.querySelector('text')?.textContent,
-    fill: rect.getAttribute('fill'),
-    stroke: rect.getAttribute('stroke'),
-  }));
+  const rectangles = Array.from(container.querySelectorAll<SVGPathElement>('.recharts-rectangle'));
+  const labels = Array.from(container.querySelectorAll<SVGTextElement>('.recharts-label-list text'));
+  return rectangles.flatMap((rect, index) => {
+    const matchesDepth = rect
+      .closest('[class*="recharts-treemap-depth-"]')
+      ?.classList.contains(`recharts-treemap-depth-${depth}`);
+    if (!matchesDepth) {
+      return [];
+    }
+    return [
+      {
+        name: labels[index]?.textContent,
+        fill: rect.getAttribute('fill'),
+        stroke: rect.getAttribute('stroke'),
+      },
+    ];
+  });
 }
 
 function renderTreemap(children: React.ReactNode) {
@@ -87,7 +99,9 @@ describe('<Treemap /> theme', () => {
     );
     const rootRect = queryTiles(container, 0)[0];
     const depthOneRects = getTileAttributes(container, 1);
-    const firstText = container.querySelector<SVGTextElement>('.recharts-treemap-depth-1 text');
+    const firstText = Array.from(container.querySelectorAll<SVGTextElement>('.recharts-label-list text')).find(
+      text => text.textContent === 'A',
+    );
     assertNotNull(rootRect);
     assertNotNull(firstText);
 
