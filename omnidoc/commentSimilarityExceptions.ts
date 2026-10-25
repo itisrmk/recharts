@@ -57,6 +57,12 @@ export const commentSimilarityExceptions: ReadonlyArray<CommentSimilarityGroup> 
     reason: 'Pie has a custom label implementation independent from other graphical elements',
   },
   {
+    components: ['Treemap'],
+    props: ['label'],
+    reason:
+      'Treemap label defaults to on, draws a name only when the tile is large enough, and stays off for custom content. Other graphical items default to off and do not have that fit check. The theme entry is the top-level branch, not one series.',
+  },
+  {
     components: ['Text', 'Label', 'LabelList'],
     props: ['background'],
     reason:

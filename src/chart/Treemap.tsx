@@ -514,13 +514,13 @@ export interface Props<DataPointType extends TreemapDataType = TreemapDataType, 
    *   HTML elements such as `<div>` are not valid inside the chart SVG and may trigger React DOM warnings.
    * - `function`: a render function of a custom label.
    *
-   * When `content` is a custom element or function and `label` is not set, this defaults to `false`
-   * so the custom content keeps full control of the tile. Otherwise it defaults to `true`.
+   * When `content` is a custom element or function and `label` is not set, this is `false`
+   * so the custom content keeps full control of the tile.
    *
    * The theme's `graphicalItems[n].label` styles these labels, one entry per top-level branch.
    * Explicit label props win over the theme.
    *
-   * @defaultValue true, or false when custom `content` is set
+   * @defaultValue true
    * @since 3.11
    *
    * @example <Treemap label={false} />
@@ -647,6 +647,7 @@ export const defaultTreeMapProps = {
   animationBegin: 0,
   animationDuration: 1500,
   animationEasing: 'linear',
+  label: true,
   ...initialEventSettingsState,
 } as const satisfies Partial<Props>;
 
